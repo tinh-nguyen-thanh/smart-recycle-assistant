@@ -17,4 +17,5 @@ class ScanSession(Base):
     contents_state: Mapped[str | None] = mapped_column(String(20))
     image_path: Mapped[str | None] = mapped_column(String(255))
     corrected_material: Mapped[str | None] = mapped_column(ForeignKey("materials.code"))
+    note: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow) 

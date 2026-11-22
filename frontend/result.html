@@ -331,7 +331,8 @@ nav.main-nav a.btn-login{background:var(--sun);color:var(--ink);padding:6px 16px
 
 <script src="knowledge.js"></script>
 <script>
-/* Bảng tri thức F2: GROUPS và CLASSES do knowledge.js nạp từ f2_knowledge.json */
+/* Bảng tri thức F2: GROUPS và CLASSES do knowledge.js nạp từ backend (GET /guide) */
+const API_BASE="http://127.0.0.1:8000";
 const LOW_CONF=0.6;
 const HKEY="scanHistory", SKEY="scanResult";
 const $=id=>document.getElementById(id);
@@ -344,9 +345,30 @@ function writeHistory(list){
     try{localStorage.setItem(HKEY,JSON.stringify(list.slice(0,50).map((x,i)=>i?{...x,image:""}:x)))}catch(_){}
   }
 }
-function loadRecord(){
+/* id do backend cấp (số nguyên). Kết quả mẫu và bản ghi cũ dùng id dạng chữ, không gửi lên máy chủ */
+const isServerId=id=>/^\d+$/.test(String(id));
+
+/* Lấy một lượt quét từ GET /history (mở từ trang Lịch sử trên máy khác) */
+async function fetchRecord(id){
+  try{
+    const r=await fetch(API_BASE+"/history?limit=200");
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const it=(await r.json()).find(x=>String(x.id)===String(id));
+    if(!it)return null;
+    return {...it,image:it.image?API_BASE+it.image:""};
+  }catch(err){
+    console.warn("Không lấy được lượt quét từ máy chủ:",err);
+    return null;
+  }
+}
+
+async function loadRecord(){
   const id=new URLSearchParams(location.search).get("id");
-  if(id){const r=readHistory().find(x=>String(x.id)===id);if(r)return {rec:r,saved:true};}
+  if(id){
+    const r=readHistory().find(x=>String(x.id)===id);
+    if(r)return {rec:r,saved:true};
+    if(isServerId(id)){const s=await fetchRecord(id);if(s)return {rec:s,saved:true};}
+  }
   try{
     const s=JSON.parse(sessionStorage.getItem(SKEY));
     if(s&&s.label)return {rec:s,saved:false};
@@ -450,8 +472,22 @@ function cancelChange(){
   pending=null;$("confirm").hidden=true;$("fixNote").value="";
   document.querySelectorAll(".choice").forEach(b=>b.classList.remove("pending"));
 }
+/* Gửi nhãn đã sửa lên backend (POST /feedback, xem docs/api.md). Trả về true nếu lưu được */
+async function sendFeedback(label,note){
+  if(rec.demo||!isServerId(rec.id))return true;   /* kết quả mẫu: chỉ lưu trên trình duyệt */
+  try{
+    const r=await fetch(API_BASE+"/feedback",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id:Number(rec.id),label,note:note||null})});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    return true;
+  }catch(err){
+    console.warn("Không gửi được /feedback:",err);
+    return false;
+  }
+}
+
 /* Bước 2: người dùng bấm "Xác nhận đổi" thì mới ghi vào lịch sử */
-function applyChange(){
+async function applyChange(){
   const k=pending;if(!k)return;
   rec.original=rec.original||rec.label;
   rec.label=k;
@@ -461,11 +497,9 @@ function applyChange(){
   cancelChange();
   saveToHistory();
   render(true);
-  /* Backend sau này (xem docs/api.md):
-     fetch(API_BASE+"/feedback",{method:"POST",headers:{"Content-Type":"application/json"},
-       body:JSON.stringify({id:rec.id,label:k,note:rec.note||""})}) */
-  toast("Đã cập nhật: "+CLASSES[k].name);
   $("fix").open=false;
+  const ok=await sendFeedback(k,rec.note);
+  toast(ok?"Đã cập nhật: "+CLASSES[k].name:"Đã lưu trên máy này, chưa gửi được lên máy chủ");
 }
 
 /* Nút "Tìm điểm thu gom": chưa có dữ liệu bản đồ nên chỉ báo "sắp có".
@@ -486,7 +520,7 @@ async function start(){
     return;
   }
   buildBins();buildChoices();
-  const loaded=loadRecord();
+  const loaded=await loadRecord();
   if(!loaded){
     /* Mở trực tiếp trang này (chưa quét ảnh): dùng dữ liệu mẫu để xem giao diện */
     rec={id:"demo",label:"nhua",confidence:.92,image:"",demo:true,time:Date.now()};
