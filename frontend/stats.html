@@ -345,7 +345,7 @@ table.data td.r,table.data th.r{text-align:right;font-variant-numeric:tabular-nu
 <main class="wrap">
   <div class="crumb"><a href="history.html"><i class="fa-solid fa-arrow-left"></i> Lịch sử</a><span>/</span><span>Thống kê</span></div>
   <h1 class="page-title">Thống kê phân loại</h1>
-  <p class="page-sub">Tổng hợp từ các lần quét đã lưu trong lịch sử.</p>
+  <p class="page-sub">Tổng hợp từ tất cả các lần quét đã lưu trên hệ thống.</p>
   <p class="list-note" id="listNote" hidden></p>
 
   <div class="tiles">
@@ -482,9 +482,9 @@ table.data td.r,table.data th.r{text-align:right;font-variant-numeric:tabular-nu
 <script src="knowledge.js"></script>
 <script>
 /* F6 - Thống kê.
-   Hiện tại tính từ lịch sử lưu trong trình duyệt (localStorage "scanHistory").
-   Khi backend có GET /stats: đặt STATS_URL, trang sẽ lấy số liệu từ API (cùng định dạng, xem docs/api.md). */
-const STATS_URL="";            /* ví dụ: "http://localhost:8000/stats" */
+   Số liệu lấy từ backend (GET /stats, xem docs/api.md).
+   Không kết nối được máy chủ thì tính tạm từ lịch sử lưu trong trình duyệt (localStorage "scanHistory"). */
+const STATS_URL="http://127.0.0.1:8000/stats";
 const HKEY="scanHistory";
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
@@ -532,15 +532,20 @@ function computeStats(list){
   return s;
 }
 
+/* source: "server" (từ backend), "local" (từ trình duyệt), "sample" (số liệu mẫu) */
 async function loadStats(){
-  if(STATS_URL){
+  try{
     const res=await fetch(STATS_URL);
     if(!res.ok)throw new Error("HTTP "+res.status);
-    return {stats:await res.json(),sample:false};
+    const stats=await res.json();
+    if(stats.total>0)return {stats,source:"server"};
+    return {stats:computeStats(sampleHistory()),source:"sample"};
+  }catch(err){
+    console.warn("Không gọi được /stats, tính từ lịch sử trên trình duyệt:",err);
+    const list=readHistory();
+    if(list.length)return {stats:computeStats(list),source:"local"};
+    return {stats:computeStats(sampleHistory()),source:"sample"};
   }
-  const list=readHistory();
-  const sample=list.length===0;
-  return {stats:computeStats(sample?sampleHistory():list),sample};
 }
 
 /* ---------- Vẽ ---------- */
@@ -619,8 +624,9 @@ async function start(){
     return;
   }
   try{
-    const {stats,sample}=await loadStats();
-    if(sample){note.hidden=false;note.textContent="Bạn chưa quét ảnh nào. Dưới đây là số liệu mẫu để minh họa giao diện."}
+    const {stats,source}=await loadStats();
+    if(source==="sample"){note.hidden=false;note.textContent="Chưa có lượt quét nào. Dưới đây là số liệu mẫu để minh họa giao diện."}
+    if(source==="local"){note.hidden=false;note.textContent="Không kết nối được máy chủ. Số liệu dưới đây chỉ tính từ các lần quét trên trình duyệt này."}
     render(stats);
   }catch(e){
     console.error(e);note.hidden=false;
