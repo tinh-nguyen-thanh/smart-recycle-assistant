@@ -51,4 +51,16 @@ def get_current_user(
     if user is None or user.status != "active":
         raise HTTPException(401, "Tài khoản không tồn tại hoặc bị khóa")
     return user
-    
+
+
+bearer_optional = HTTPBearer(auto_error=False)
+
+
+def get_optional_user(
+    cred: HTTPAuthorizationCredentials | None = Depends(bearer_optional),
+    db: Session = Depends(get_db),
+) -> User | None:
+    # Không gửi token thì là khách; có gửi mà token sai thì vẫn báo 401
+    if cred is None:
+        return None
+    return get_current_user(cred, db)

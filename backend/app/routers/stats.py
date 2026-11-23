@@ -1,7 +1,7 @@
 """Router F6 (/stats) của C - số liệu cho trang thống kê frontend/stats.html.
 
 Đọc từ bảng scan_sessions (của B). Định dạng trả về theo docs/api.md.
-Hiện thống kê toàn hệ thống; khi có đăng nhập sẽ lọc theo user_id.
+Thống kê của người đang đăng nhập (lọc theo user_id).
 """
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.scan import ScanSession
 from app.routers.guide import load_knowledge
+from app.models import User
+from app.security import get_current_user
 
 router = APIRouter(tags=["F6 - Thống kê"])
 
@@ -69,8 +71,8 @@ def compute_stats(rows, knowledge: dict, today):
     }
 
 
-@router.get("/stats")  # TODO: lọc theo user_id khi B xong đăng nhập
-def stats(db: Session = Depends(get_db)):
-    rows = db.scalars(select(ScanSession)).all()
+@router.get("/stats")
+def stats(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.scalars(select(ScanSession).where(ScanSession.user_id == user.id)).all()
     today = datetime.now(VN_TZ).date()
     return compute_stats(rows, load_knowledge(), today)

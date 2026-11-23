@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,7 +15,7 @@ EMAIL_PATTERN = r"^[^\s@]+@[^\s@]+\.[^\s@]+$" # cùng biểu thức kiểm tra v
 
 
 class RegisterIn(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
     email: str = Field(max_length=100, pattern=EMAIL_PATTERN)
     password: str = Field(min_length=8, max_length=128)
 
@@ -38,7 +40,7 @@ def register(body: RegisterIn, db: Session= Depends(get_db)):
     email = body.email.lower()
     if db.scalar(select(User).where(User.email == email)):
         raise HTTPException(409, "Email này đã được đăng ký. Hãy đăng nhập.")
-    user = User(email=email, password_hash=hash_password(body.password), display_name=body.name.strip())
+    user = User(email=email, password_hash=hash_password(body.password), display_name=body.name)
     db.add(user)
     db.commit()
     db.refresh(user)
