@@ -29,7 +29,7 @@ A và B điền phần của mình, sửa xong thì báo trong nhóm.
 | POST | `/chat` | F3 chatbot RAG | B | Chưa chốt |
 | POST | `/auth/register` | F4 đăng ký | B | Không |
 | POST | `/auth/login` | F4 đăng nhập, trả JWT | B | Không |
-
+| GET | `/auth/me` | F4 xem người đang đăng nhập | B | Có |
 ---
 
 ## POST /predict (A)
@@ -190,9 +190,79 @@ Số liệu cho trang thống kê F6.
 
 B điền.
 
-## POST /auth/register, POST /auth/login (B)
+## POST /auth/register (B)
 
-B điền: trường gửi lên, định dạng token, cách giao diện gửi token (đề xuất: header `Authorization: Bearer <token>`).
+Tạo tài khoản mới. Đăng ký xong trả token luôn, người dùng không phải đăng nhập lại.
+
+**Gửi:** `application/json`
+
+```json
+{
+  "name": "Nguyễn Thanh Tính",
+  "email": "tinh@test.com",
+  "password": "12345678"
+}
+```
+
+**Nhận (201):**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": { "id": 1, "name": "Nguyễn Thanh Tính", "email": "tinh@test.com" }
+}
+```
+
+- `name`: 1 đến 100 ký tự, được có dấu tiếng Việt.
+- `email`: tối đa 100 ký tự, được đổi về chữ thường trước khi lưu, nên `Tinh@Test.com` và `tinh@test.com` là cùng một tài khoản.
+- `password`: 8 đến 128 ký tự. Server chỉ lưu bản băm (PBKDF2-SHA256, salt riêng cho từng người), không lưu mật khẩu gốc.
+
+## POST /auth/login (B)
+
+**Gửi:** `application/json`
+
+```json
+{ "email": "tinh@test.com", "password": "12345678" }
+```
+
+**Nhận (200):** giống `/auth/register`.
+
+- Sai email hay sai mật khẩu đều trả cùng một lỗi 401, để người khác không dò được email nào đã đăng ký.
+
+## GET /auth/me (B)
+
+Trả thông tin người đang đăng nhập. Cần gửi token.
+
+**Nhận (200):**
+
+```json
+{ "id": 1, "name": "Nguyễn Thanh Tính", "email": "tinh@test.com" }
+```
+
+## Đăng nhập và token (B)
+
+**Gửi token:** các API cần đăng nhập đọc header
+
+```
+Authorization: Bearer <token>
+```
+
+- Token là JWT (HS256), hết hạn sau 24 giờ. Hết hạn thì đăng nhập lại.
+- Giao diện lưu token ở `localStorage` với khóa `sr_token`, thông tin người dùng ở khóa `sr_user`.
+- Backend: muốn một API bắt buộc đăng nhập thì thêm tham số `user: User = Depends(get_current_user)` (import từ `app.security`).
+
+**Mã lỗi:**
+
+| Mã | Khi nào |
+|---|---|
+| 401 | Sai email hoặc mật khẩu; thiếu token, token hỏng hoặc hết hạn |
+| 403 | Tài khoản bị khóa (`status` khác `active`) |
+| 409 | Email đã được đăng ký |
+| 422 | Dữ liệu gửi lên sai định dạng: thiếu trường, email sai, mật khẩu ngắn hơn 8 ký tự |
+
+Lỗi trả dạng `{"detail": "thông báo"}`; `login.html` hiện thẳng nội dung `detail` cho người dùng.
+
+**Chưa hỗ trợ:** đăng nhập bằng Google, Facebook, Zalo. Các nút này trên `login.html` đang chạy chế độ demo.
 
 ---
 
