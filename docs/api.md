@@ -268,8 +268,7 @@ Lỗi trả dạng `{"detail": "thông báo"}`; `login.html` hiện thẳng nộ
 
 ---
 
-## Việc cần nhóm chốt
-Đã chốt:
+## Các việc đã chốt
 
 1. Không dùng tiền tố `/api`.
 2. `/predict` trả `id` bản ghi; không bắt buộc đăng nhập, có token thì lưu `user_id`.
