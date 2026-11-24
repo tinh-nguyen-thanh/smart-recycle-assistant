@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.scan import ScanSession
+from app.models import User
+from app.security import get_current_user, get_optional_user
 
 try:
     from app.routers.guide import get_guide  # hàm của C: trả về (group, guide) theo nhãn
@@ -59,7 +61,11 @@ def classify(img: Image.Image):
 
 # ---------- POST /predict ----------
 @router.post("/predict")
-def predict(file: UploadFile = File(...), db: Session = Depends(get_db)):
+def predict(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+):
     # Dùng def (không phải async def) để FastAPI chạy trong thread riêng, không chặn server khi mô hình suy luận
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(status_code=400, detail="Tệp tải lên không phải ảnh")
@@ -79,7 +85,7 @@ def predict(file: UploadFile = File(...), db: Session = Depends(get_db)):
     img.convert("RGB").save(UPLOAD_DIR / image_name, quality=90)
 
     scan = ScanSession(
-        user_id=None,  # TODO: lấy từ JWT khi B xong đăng nhập
+        user_id=user.id if user else None,  
         scan_type="image",
         material_code=label,
         confidence=confidence,
@@ -100,14 +106,19 @@ def predict(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
 
 # ---------- GET /history ----------
-@router.get("/history")  # TODO: thêm đăng nhập và lọc theo user_id khi B xong auth
+@router.get("/history")  
 def history(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     rows = db.scalars(
-        select(ScanSession).order_by(ScanSession.id.desc()).limit(limit).offset(offset)
+        select(ScanSession)
+        .where(ScanSession.user_id == user.id)
+        .order_by(ScanSession.id.desc())
+        .limit(limit)
+        .offset(offset)
     ).all()
 
     items = []

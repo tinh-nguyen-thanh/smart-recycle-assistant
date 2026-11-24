@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.scan import ScanSession
+from app.models import User
+from app.security import get_optional_user
 
 router = APIRouter(tags=["F7 - Sửa nhãn"])
 
@@ -55,11 +57,16 @@ def apply_feedback(scan, label: str, note: str | None) -> dict:
 
 
 @router.post("/feedback")
-def feedback(body: FeedbackIn, db: Session = Depends(get_db)):
+def feedback(
+    body: FeedbackIn,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+):
     if body.label not in valid_labels():
         raise HTTPException(status_code=400, detail=f"Nhãn '{body.label}' không có trong labels.json")
     scan = db.get(ScanSession, body.id)
-    if scan is None:
+    # Lượt quét có chủ thì chỉ chủ được sửa; báo 404 để không lộ id của người khác
+    if scan is None or (scan.user_id is not None and (user is None or scan.user_id != user.id)):
         raise HTTPException(status_code=404, detail=f"Không có lượt quét id={body.id}")
     result = apply_feedback(scan, body.label, body.note)
     db.commit()
