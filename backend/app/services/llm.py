@@ -16,9 +16,9 @@ SYSTEM_PROMPT = (
 )
 
 
-def generate(question: str, docs: list[str]) -> str:
-    """Gửi câu hỏi kèm các đoạn tài liệu cho LLM, trả về câu trả lời."""
-    response = ollama.chat(
+def generate(question: str, docs: list[str]):
+    """Gửi câu hỏi kèm tài liệu cho LLM, trả về dần từng mẩu chữ khi LLM viết ra."""
+    stream = ollama.chat(
         model=LLM_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -26,5 +26,7 @@ def generate(question: str, docs: list[str]) -> str:
         ],
         think=False,
         options={"num_ctx": 2048, "temperature": 0},
+        stream=True,
     )
-    return response.message.content.strip()
+    for chunk in stream:
+        yield chunk.message.content

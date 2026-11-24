@@ -1,14 +1,16 @@
 """Router F3 (/chat) của B - chatbot hỏi đáp phân loại rác (RAG).
 
 Tìm đoạn tri thức gần nhất (services/rag.py), rồi nhờ LLM viết câu trả lời (services/llm.py).
+Câu trả lời gửi dần dạng text (stream); nhãn tài liệu đã dùng nằm ở header X-Sources.
 """
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, StringConstraints
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import ChatMessage, User
 from app.security import get_optional_user
 from app.services.llm import generate
@@ -35,18 +37,34 @@ def chat(
     except Exception:  # Ollama chưa chạy hoặc thiếu mô hình embedding
         raise HTTPException(503, "Chatbot tạm thời không hoạt động")
 
-    if not hits:
-        answer = NO_ANSWER  # không gọi LLM nên không thể bịa
-    else:
-        try:
-            answer = generate(body.message, [h["text"] for h in hits])
-        except Exception:  # LLM lỗi: vẫn trả tài liệu tìm được thay vì báo lỗi
-            answer = "\n\n".join(h["text"] for h in hits)
-
     user_id = user.id if user else None
-    db.add_all([
-        ChatMessage(user_id=user_id, role="user", content=body.message),
-        ChatMessage(user_id=user_id, role="assistant", content=answer),
-    ])
+    db.add(ChatMessage(user_id=user_id, role="user", content=body.message))
     db.commit()
-    return {"answer": answer, "sources": [h["label"] for h in hits]}
+    return StreamingResponse(
+        stream_answer(body.message, hits, user_id),
+        media_type="text/plain; charset=utf-8",
+        headers={"X-Sources": ",".join(h["label"] for h in hits)},
+    )
+
+
+def stream_answer(question: str, hits: list[dict], user_id: int | None):
+    """Gửi dần câu trả lời; gửi xong thì lưu cả câu vào chat_messages."""
+    parts = []
+    try:
+        if not hits:
+            parts.append(NO_ANSWER)  # không gọi LLM nên không thể bịa
+            yield NO_ANSWER
+        else:
+            for piece in generate(question, [h["text"] for h in hits]):
+                parts.append(piece)
+                yield piece
+    except Exception:
+        if not parts:  # LLM lỗi trước khi viết chữ nào: gửi tài liệu tìm được thay vì báo lỗi
+            fallback = "\n\n".join(h["text"] for h in hits)
+            parts.append(fallback)
+            yield fallback
+    finally:
+        # Phiên db của Depends có thể đã đóng khi đang stream, nên mở phiên mới để lưu
+        with SessionLocal() as db:
+            db.add(ChatMessage(user_id=user_id, role="assistant", content="".join(parts).strip()))
+            db.commit()
