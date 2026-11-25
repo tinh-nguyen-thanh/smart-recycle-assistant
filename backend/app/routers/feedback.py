@@ -2,6 +2,10 @@
 
 Ghi vào cột corrected_material của bảng scan_sessions (của B).
 Ghi chú (note) chỉ được lưu khi bảng đã có cột note; trước đó vẫn trả về nhưng không lưu.
+
+Chống sửa nhãn bừa (cách 5): chỉ người đã đăng nhập mới được sửa, và chỉ sửa lượt quét của chính mình.
+Lượt quét lúc chưa đăng nhập (user_id rỗng) không ai sửa được, vì không biết ai đã chụp.
+Nhãn sửa vẫn chỉ là đề xuất: ai/scripts/export_feedback.py xuất ra để nhóm duyệt trước khi huấn luyện lại.
 """
 import json
 from functools import lru_cache
@@ -14,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.scan import ScanSession
 from app.models import User
-from app.security import get_optional_user
+from app.security import get_current_user
 
 router = APIRouter(tags=["F7 - Sửa nhãn"])
 
@@ -60,13 +64,14 @@ def apply_feedback(scan, label: str, note: str | None) -> dict:
 def feedback(
     body: FeedbackIn,
     db: Session = Depends(get_db),
-    user: User | None = Depends(get_optional_user),
+    user: User = Depends(get_current_user),  # không có token hoặc token sai: 401/403, không vào được tới đây
 ):
     if body.label not in valid_labels():
         raise HTTPException(status_code=400, detail=f"Nhãn '{body.label}' không có trong labels.json")
     scan = db.get(ScanSession, body.id)
-    # Lượt quét có chủ thì chỉ chủ được sửa; báo 404 để không lộ id của người khác
-    if scan is None or (scan.user_id is not None and (user is None or scan.user_id != user.id)):
+    # Chỉ chủ lượt quét được sửa. Lượt quét của khách (user_id rỗng) cũng bị chặn.
+    # Báo 404 cho mọi trường hợp để không lộ id lượt quét của người khác.
+    if scan is None or scan.user_id is None or scan.user_id != user.id:
         raise HTTPException(status_code=404, detail=f"Không có lượt quét id={body.id}")
     result = apply_feedback(scan, body.label, body.note)
     db.commit()

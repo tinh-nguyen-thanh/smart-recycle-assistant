@@ -11,7 +11,7 @@ A và B điền phần của mình, sửa xong thì báo trong nhóm.
 - Dữ liệu gửi và nhận là JSON, trừ `/predict` gửi ảnh bằng `multipart/form-data`.
 - Lỗi trả theo dạng mặc định của FastAPI: `{"detail": "nội dung lỗi"}`.
 - Nhãn loại rác luôn dùng đúng tên trong `ai/models/labels.json`:
-  `giay`, `nhua`, `kim_loai`, `thuy_tinh`, `huu_co`, `pin_nguy_hai`, `rac_khac`.
+  `giay`, `nhua`, `kim_loai`, `thuy_tinh`, `huu_co`, `pin_nguy_hai`, `rac_khac`, `tui_ni_long_xop`.
 - Backend đọc thứ tự lớp từ `labels.json`, không ghi cứng trong code.
 - Giao diện chạy bằng Live Server (cổng 5500) còn backend ở cổng 8000, nên B cần bật CORS
   cho `http://localhost:5500` và `http://127.0.0.1:5500`.
@@ -24,7 +24,7 @@ A và B điền phần của mình, sửa xong thì báo trong nhóm.
 | GET | `/history` | F5 lịch sử quét | A | Có |
 | GET | `/guide` | F2 toàn bộ bảng tri thức | C | Không |
 | GET | `/guide/{label}` | F2 hướng dẫn cho một loại rác | C | Không |
-| POST | `/feedback` | F7 lưu nhãn người dùng sửa | C | Không (chỉ sửa được lượt quét của mình) |
+| POST | `/feedback` | F7 lưu nhãn người dùng sửa | C | Có (chỉ sửa được lượt quét của mình) |
 | GET | `/stats` | F6 thống kê | C | Có |
 | POST | `/chat` | F3 chatbot RAG | B | Không (có token thì gắn `user_id`) |
 | POST | `/auth/register` | F4 đăng ký | B | Không |
@@ -160,7 +160,11 @@ và cải thiện mô hình.
 
 Nếu người dùng chọn lại đúng nhãn AI đã dự đoán thì `corrected` là `false`.
 
-- Không bắt buộc đăng nhập. Lượt quét đã có chủ thì chỉ chủ (gửi kèm token) mới sửa được; người khác nhận 404 như khi id không tồn tại, để không lộ lượt quét của người khác.
+- Cần đăng nhập (`Authorization: Bearer <token>`). Thiếu hoặc sai token trả 401 (hoặc 403 nếu không gửi header).
+- Chỉ sửa được lượt quét của chính người đang đăng nhập. Lượt quét lúc chưa đăng nhập (`user_id` rỗng) không ai sửa được, vì không biết ai đã chụp.
+- Mọi trường hợp không được sửa (id không tồn tại, lượt quét của người khác, lượt quét của khách) đều trả **404**, để không lộ lượt quét của người khác.
+- `label` không có trong `labels.json` trả 400.
+- Nhãn sửa chỉ là **đề xuất** cho lần huấn luyện sau: `ai/scripts/export_feedback.py` xuất ra `feedback.csv` để nhóm duyệt (cột `da_duyet`), và tự đánh dấu `can_xem_ky` cho lượt AI đoán với độ tin cậy từ 0,9 mà vẫn bị sửa.
 
 ## GET /stats (C)
 
@@ -320,6 +324,6 @@ Lỗi trả dạng `{"detail": "thông báo"}`; `login.html` hiện thẳng nộ
 
 1. Không dùng tiền tố `/api`.
 2. `/predict` trả `id` bản ghi; không bắt buộc đăng nhập, có token thì lưu `user_id`.
-3. Người chưa đăng nhập quét ảnh: vẫn lưu trên server với `user_id` rỗng; trang Lịch sử và Thống kê dùng dữ liệu trên trình duyệt.
+3. Người chưa đăng nhập quét ảnh: vẫn lưu trên server với `user_id` rỗng; trang Lịch sử và Thống kê dùng dữ liệu trên trình duyệt; không sửa nhãn được (phải đăng nhập).
 4. `/stats` tính theo từng người dùng.
 5. `/chat` không bắt buộc đăng nhập; LLM chạy trên máy bằng Ollama (`qwen3:8b`), tìm kiếm bằng `bge-m3`.
