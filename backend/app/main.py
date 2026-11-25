@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine
 import app.models  # noqa: F401 (nạp model để create_all thấy các bảng)
-from app.routers import auth, feedback, guide, predict, stats
+from app.routers import auth, chat, feedback, guide, predict, stats
 
 Base.metadata.create_all(bind=engine)
 
@@ -21,6 +21,7 @@ app.include_router(guide.router)
 app.include_router(feedback.router)
 app.include_router(stats.router)
 app.include_router(auth.router)
+app.include_router(chat.router)
 
 app.add_middleware(
     CORSMiddleware,

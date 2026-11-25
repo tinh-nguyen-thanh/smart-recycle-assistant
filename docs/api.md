@@ -26,7 +26,7 @@ A và B điền phần của mình, sửa xong thì báo trong nhóm.
 | GET | `/guide/{label}` | F2 hướng dẫn cho một loại rác | C | Không |
 | POST | `/feedback` | F7 lưu nhãn người dùng sửa | C | Không (chỉ sửa được lượt quét của mình) |
 | GET | `/stats` | F6 thống kê | C | Có |
-| POST | `/chat` | F3 chatbot RAG | B | Chưa chốt |
+| POST | `/chat` | F3 chatbot RAG | B | Không (có token thì gắn `user_id`) |
 | POST | `/auth/register` | F4 đăng ký | B | Không |
 | POST | `/auth/login` | F4 đăng nhập, trả JWT | B | Không |
 | GET | `/auth/me` | F4 xem người đang đăng nhập | B | Có |
@@ -190,7 +190,55 @@ Số liệu cho trang thống kê F6.
 
 ## POST /chat (B)
 
-B điền.
+Người dùng hỏi cách phân loại một loại rác. Backend tìm đoạn tri thức gần nhất trong
+`backend/app/data/f2_knowledge.json` (bảng tri thức F2 của C), rồi nhờ LLM viết câu trả lời
+chỉ dựa trên các đoạn đó (RAG).
+
+**Gửi:** `application/json`
+
+```json
+{ "message": "Pin điện thoại hỏng bỏ ở đâu?" }
+```
+
+- `message`: 1 đến 500 ký tự, khoảng trắng hai đầu bị cắt bỏ.
+
+**Nhận (200):** `text/plain; charset=utf-8`, gửi dần từng mẩu chữ (stream), không phải JSON.
+
+```
+Pin điện thoại hỏng thuộc nhóm Chất thải nguy hại. Bỏ vào điểm thu gom chất thải nguy hại...
+```
+
+- Header `X-Sources`: các nhãn tài liệu đã dùng, ví dụ `pin_nguy_hai,rac_khac`; rỗng nếu không tìm thấy.
+  Muốn đọc header này từ giao diện thì backend phải thêm `expose_headers=["X-Sources"]` vào CORS.
+- Giao diện đọc dần bằng `res.body.getReader()`; xem `frontend/chat.js`.
+- Không bắt buộc đăng nhập. Có token thì câu hỏi và câu trả lời được lưu với `user_id`.
+- Mỗi lượt hỏi lưu 2 dòng vào bảng `chat_messages`: `role` là `user` và `assistant`.
+
+**Cách trả lời:**
+
+| Trường hợp | Kết quả |
+|---|---|
+| Tìm được đoạn có điểm giống ≥ 0,5 | LLM viết câu trả lời 2–4 câu từ tối đa 2 đoạn |
+| Không đoạn nào đạt 0,5 | Câu cố định "Hệ thống chưa có hướng dẫn cho loại rác này...", không gọi LLM |
+| LLM lỗi trước khi viết chữ nào | Trả nguyên văn các đoạn tài liệu tìm được |
+
+**Mã lỗi:**
+
+| Mã | Khi nào |
+|---|---|
+| 422 | `message` rỗng hoặc dài quá 500 ký tự |
+| 503 | Ollama chưa chạy hoặc thiếu mô hình embedding |
+
+**Chạy trên máy:** cần cài Ollama và tải 2 mô hình (khoảng 6,4 GB):
+
+```powershell
+ollama pull bge-m3
+ollama pull qwen3:8b
+```
+
+- `bge-m3`: đổi câu hỏi và tài liệu thành vector để tìm kiếm (`backend/app/services/rag.py`).
+- `qwen3:8b`: viết câu trả lời (`backend/app/services/llm.py`). Muốn đổi LLM chỉ sửa file này.
+- Cần gõ tiếng Việt có dấu; câu không dấu thường không đạt ngưỡng 0,5.
 
 ## POST /auth/register (B)
 
@@ -274,3 +322,4 @@ Lỗi trả dạng `{"detail": "thông báo"}`; `login.html` hiện thẳng nộ
 2. `/predict` trả `id` bản ghi; không bắt buộc đăng nhập, có token thì lưu `user_id`.
 3. Người chưa đăng nhập quét ảnh: vẫn lưu trên server với `user_id` rỗng; trang Lịch sử và Thống kê dùng dữ liệu trên trình duyệt.
 4. `/stats` tính theo từng người dùng.
+5. `/chat` không bắt buộc đăng nhập; LLM chạy trên máy bằng Ollama (`qwen3:8b`), tìm kiếm bằng `bge-m3`.
