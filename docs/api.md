@@ -20,16 +20,16 @@ A và B điền phần của mình, sửa xong thì báo trong nhóm.
 
 | Phương thức | Đường dẫn | Chức năng | Người làm | Cần đăng nhập |
 |---|---|---|---|---|
-| POST | `/predict` | F1 nhận diện ảnh, kèm F2 hướng dẫn | A | Không (đề xuất) |
+| POST | `/predict` | F1 nhận diện ảnh, kèm F2 hướng dẫn | A | Không (có token thì gắn `user_id`) |
 | GET | `/history` | F5 lịch sử quét | A | Có |
 | GET | `/guide` | F2 toàn bộ bảng tri thức | C | Không |
 | GET | `/guide/{label}` | F2 hướng dẫn cho một loại rác | C | Không |
-| POST | `/feedback` | F7 lưu nhãn người dùng sửa | C | Không (đề xuất) |
-| GET | `/stats` | F6 thống kê | C | Có (đề xuất) |
-| POST | `/chat` | F3 chatbot RAG | B | Chưa chốt |
+| POST | `/feedback` | F7 lưu nhãn người dùng sửa | C | Không (chỉ sửa được lượt quét của mình) |
+| GET | `/stats` | F6 thống kê | C | Có |
+| POST | `/chat` | F3 chatbot RAG | B | Không (có token thì gắn `user_id`) |
 | POST | `/auth/register` | F4 đăng ký | B | Không |
 | POST | `/auth/login` | F4 đăng nhập, trả JWT | B | Không |
-
+| GET | `/auth/me` | F4 xem người đang đăng nhập | B | Có |
 ---
 
 ## POST /predict (A)
@@ -114,7 +114,7 @@ Ví dụ: `GET /history?limit=20&offset=0`
 - Chỉ khi đã sửa nhãn mới có thêm `corrected: true` và `original` (nhãn AI dự đoán).
 - `time` theo ISO 8601, múi giờ UTC.
 - `image` là đường dẫn tương đối. Ghép sau địa chỉ backend để hiện ảnh, ví dụ `http://localhost:8000/uploads/844338b6....jpg`. Có thể là `null` nếu bản ghi không có ảnh.
-- Chưa có người dùng: hiện trả toàn bộ lịch sử của mọi người, chưa lọc theo tài khoản. Khi B xong đăng nhập (JWT) sẽ lọc theo người dùng.
+- Cần đăng nhập (`Authorization: Bearer <token>`). Chỉ trả lượt quét của người đang đăng nhập; thiếu hoặc sai token trả 401.
 ---
 ## GET /guide (C)
 
@@ -137,7 +137,7 @@ Ví dụ `GET /guide/pin_nguy_hai`.
 
 Nhãn không có trong bảng: trả mã 404.
 
-## POST /feedback (C) (đề xuất)
+## POST /feedback (C)
 
 Người dùng bấm "Kết quả sai?" và chọn lại loại rác. Nhãn sửa được lưu để phân tích lỗi
 và cải thiện mô hình.
@@ -160,7 +160,9 @@ và cải thiện mô hình.
 
 Nếu người dùng chọn lại đúng nhãn AI đã dự đoán thì `corrected` là `false`.
 
-## GET /stats (C) (đề xuất)
+- Không bắt buộc đăng nhập. Lượt quét đã có chủ thì chỉ chủ (gửi kèm token) mới sửa được; người khác nhận 404 như khi id không tồn tại, để không lộ lượt quét của người khác.
+
+## GET /stats (C)
 
 Số liệu cho trang thống kê F6.
 
@@ -182,23 +184,142 @@ Số liệu cho trang thống kê F6.
 - `by_day` gồm 7 ngày gần nhất, ngày không có lượt quét vẫn trả `count: 0`.
 - `corrections` đếm các cặp "AI đoán `from`, người dùng sửa thành `to`", sắp giảm dần theo `count`.
   Trang `frontend/stats.html` dùng cho phần "AI hay nhầm ở đâu".
-- Cần chốt: thống kê theo từng người dùng hay toàn hệ thống.
+- Cần đăng nhập. Chỉ thống kê lượt quét của người đang đăng nhập; thiếu hoặc sai token trả 401.
 
 ---
 
 ## POST /chat (B)
 
-B điền.
+Người dùng hỏi cách phân loại một loại rác. Backend tìm đoạn tri thức gần nhất trong
+`backend/app/data/f2_knowledge.json` (bảng tri thức F2 của C), rồi nhờ LLM viết câu trả lời
+chỉ dựa trên các đoạn đó (RAG).
 
-## POST /auth/register, POST /auth/login (B)
+**Gửi:** `application/json`
 
-B điền: trường gửi lên, định dạng token, cách giao diện gửi token (đề xuất: header `Authorization: Bearer <token>`).
+```json
+{ "message": "Pin điện thoại hỏng bỏ ở đâu?" }
+```
+
+- `message`: 1 đến 500 ký tự, khoảng trắng hai đầu bị cắt bỏ.
+
+**Nhận (200):** `text/plain; charset=utf-8`, gửi dần từng mẩu chữ (stream), không phải JSON.
+
+```
+Pin điện thoại hỏng thuộc nhóm Chất thải nguy hại. Bỏ vào điểm thu gom chất thải nguy hại...
+```
+
+- Header `X-Sources`: các nhãn tài liệu đã dùng, ví dụ `pin_nguy_hai,rac_khac`; rỗng nếu không tìm thấy.
+  Muốn đọc header này từ giao diện thì backend phải thêm `expose_headers=["X-Sources"]` vào CORS.
+- Giao diện đọc dần bằng `res.body.getReader()`; xem `frontend/chat.js`.
+- Không bắt buộc đăng nhập. Có token thì câu hỏi và câu trả lời được lưu với `user_id`.
+- Mỗi lượt hỏi lưu 2 dòng vào bảng `chat_messages`: `role` là `user` và `assistant`.
+
+**Cách trả lời:**
+
+| Trường hợp | Kết quả |
+|---|---|
+| Tìm được đoạn có điểm giống ≥ 0,5 | LLM viết câu trả lời 2–4 câu từ tối đa 2 đoạn |
+| Không đoạn nào đạt 0,5 | Câu cố định "Hệ thống chưa có hướng dẫn cho loại rác này...", không gọi LLM |
+| LLM lỗi trước khi viết chữ nào | Trả nguyên văn các đoạn tài liệu tìm được |
+
+**Mã lỗi:**
+
+| Mã | Khi nào |
+|---|---|
+| 422 | `message` rỗng hoặc dài quá 500 ký tự |
+| 503 | Ollama chưa chạy hoặc thiếu mô hình embedding |
+
+**Chạy trên máy:** cần cài Ollama và tải 2 mô hình (khoảng 6,4 GB):
+
+```powershell
+ollama pull bge-m3
+ollama pull qwen3:8b
+```
+
+- `bge-m3`: đổi câu hỏi và tài liệu thành vector để tìm kiếm (`backend/app/services/rag.py`).
+- `qwen3:8b`: viết câu trả lời (`backend/app/services/llm.py`). Muốn đổi LLM chỉ sửa file này.
+- Cần gõ tiếng Việt có dấu; câu không dấu thường không đạt ngưỡng 0,5.
+
+## POST /auth/register (B)
+
+Tạo tài khoản mới. Đăng ký xong trả token luôn, người dùng không phải đăng nhập lại.
+
+**Gửi:** `application/json`
+
+```json
+{
+  "name": "Nguyễn Thanh Tính",
+  "email": "tinh@test.com",
+  "password": "12345678"
+}
+```
+
+**Nhận (201):**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": { "id": 1, "name": "Nguyễn Thanh Tính", "email": "tinh@test.com" }
+}
+```
+
+- `name`: 1 đến 100 ký tự, được có dấu tiếng Việt.
+- `email`: tối đa 100 ký tự, được đổi về chữ thường trước khi lưu, nên `Tinh@Test.com` và `tinh@test.com` là cùng một tài khoản.
+- `password`: 8 đến 128 ký tự. Server chỉ lưu bản băm (PBKDF2-SHA256, salt riêng cho từng người), không lưu mật khẩu gốc.
+
+## POST /auth/login (B)
+
+**Gửi:** `application/json`
+
+```json
+{ "email": "tinh@test.com", "password": "12345678" }
+```
+
+**Nhận (200):** giống `/auth/register`.
+
+- Sai email hay sai mật khẩu đều trả cùng một lỗi 401, để người khác không dò được email nào đã đăng ký.
+
+## GET /auth/me (B)
+
+Trả thông tin người đang đăng nhập. Cần gửi token.
+
+**Nhận (200):**
+
+```json
+{ "id": 1, "name": "Nguyễn Thanh Tính", "email": "tinh@test.com" }
+```
+
+## Đăng nhập và token (B)
+
+**Gửi token:** các API cần đăng nhập đọc header
+
+```
+Authorization: Bearer <token>
+```
+
+- Token là JWT (HS256), hết hạn sau 24 giờ. Hết hạn thì đăng nhập lại.
+- Giao diện lưu token ở `localStorage` với khóa `sr_token`, thông tin người dùng ở khóa `sr_user`.
+- Backend: muốn một API bắt buộc đăng nhập thì thêm tham số `user: User = Depends(get_current_user)` (import từ `app.security`).
+
+**Mã lỗi:**
+
+| Mã | Khi nào |
+|---|---|
+| 401 | Sai email hoặc mật khẩu; thiếu token, token hỏng hoặc hết hạn |
+| 403 | Tài khoản bị khóa (`status` khác `active`) |
+| 409 | Email đã được đăng ký |
+| 422 | Dữ liệu gửi lên sai định dạng: thiếu trường, email sai, mật khẩu ngắn hơn 8 ký tự |
+
+Lỗi trả dạng `{"detail": "thông báo"}`; `login.html` hiện thẳng nội dung `detail` cho người dùng.
+
+**Chưa hỗ trợ:** đăng nhập bằng Google, Facebook, Zalo. Các nút này trên `login.html` đang chạy chế độ demo.
 
 ---
 
-## Việc cần nhóm chốt
+## Các việc đã chốt
 
-1. Có dùng tiền tố `/api` hay không.
-2. `/predict` có trả `id` bản ghi không, và có yêu cầu đăng nhập không.
-3. Người chưa đăng nhập quét ảnh thì lịch sử lưu ở đâu (trình duyệt hay không lưu).
-4. `/stats` tính theo từng người dùng hay toàn hệ thống.
+1. Không dùng tiền tố `/api`.
+2. `/predict` trả `id` bản ghi; không bắt buộc đăng nhập, có token thì lưu `user_id`.
+3. Người chưa đăng nhập quét ảnh: vẫn lưu trên server với `user_id` rỗng; trang Lịch sử và Thống kê dùng dữ liệu trên trình duyệt.
+4. `/stats` tính theo từng người dùng.
+5. `/chat` không bắt buộc đăng nhập; LLM chạy trên máy bằng Ollama (`qwen3:8b`), tìm kiếm bằng `bge-m3`.

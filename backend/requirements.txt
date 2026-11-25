@@ -17,3 +17,5 @@ uvicorn==0.54.0
 onnxruntime==1.32.0
 pillow==13.0.0
 numpy==2.5.5
+PyJWT==2.15.1
+ollama==0.6.3

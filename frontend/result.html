@@ -329,6 +329,8 @@ nav.main-nav a.btn-login{background:var(--sun);color:var(--ink);padding:6px 16px
   </div>
 </nav>
 
+<script src="auth.js"></script>
+<script src="chat.js"></script>
 <script src="knowledge.js"></script>
 <script>
 /* Bảng tri thức F2: GROUPS và CLASSES do knowledge.js nạp từ backend (GET /guide) */
@@ -351,7 +353,7 @@ const isServerId=id=>/^\d+$/.test(String(id));
 /* Lấy một lượt quét từ GET /history (mở từ trang Lịch sử trên máy khác) */
 async function fetchRecord(id){
   try{
-    const r=await fetch(API_BASE+"/history?limit=200");
+    const r=await fetch(API_BASE+"/history?limit=200",{headers:authHeaders()});
     if(!r.ok)throw new Error("HTTP "+r.status);
     const it=(await r.json()).find(x=>String(x.id)===String(id));
     if(!it)return null;
@@ -476,7 +478,7 @@ function cancelChange(){
 async function sendFeedback(label,note){
   if(rec.demo||!isServerId(rec.id))return true;   /* kết quả mẫu: chỉ lưu trên trình duyệt */
   try{
-    const r=await fetch(API_BASE+"/feedback",{method:"POST",headers:{"Content-Type":"application/json"},
+    const r=await fetch(API_BASE+"/feedback",{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),
       body:JSON.stringify({id:Number(rec.id),label,note:note||null})});
     if(!r.ok)throw new Error("HTTP "+r.status);
     return true;

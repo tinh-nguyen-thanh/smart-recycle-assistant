@@ -153,6 +153,7 @@ form{margin-top:22px;display:grid;gap:16px}
 </div>
 
 <script>
+const API_BASE="http://127.0.0.1:8000";
 const $=id=>document.getElementById(id);
 let mode="login";
 
@@ -215,11 +216,11 @@ $("form").addEventListener("submit",async e=>{
   let user,demo=false;
   try{
     /* Backend FastAPI:
-       POST /api/auth/register  {name,email,password}
-       POST /api/auth/login     {email,password}
+       POST /auth/register  {name,email,password}
+       POST /auth/login     {email,password}
        Thành công: {"token":"...","user":{"name":"...","email":"..."}}
        Lỗi: HTTP 400/401/409 kèm {"detail":"thông báo"} */
-    const r=await fetch(reg?"/api/auth/register":"/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const r=await fetch(API_BASE+(reg?"/auth/register":"/auth/login"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const d=await r.json().catch(()=>({}));
     if(!r.ok){msg("error",d.detail||(r.status===401?"Email hoặc mật khẩu chưa đúng.":r.status===409?"Email này đã được đăng ký. Hãy đăng nhập.":"Có lỗi xảy ra, vui lòng thử lại."));btn.disabled=false;btn.textContent=label;return}
     user=d.user;try{localStorage.setItem("sr_token",d.token)}catch(_){}
